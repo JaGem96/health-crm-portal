@@ -1,30 +1,27 @@
 import { useState, useEffect } from 'react';
+import './index.css';
 
-function App() {
+export default function App() {
   const [patients, setPatients] = useState([]);
   const [tasks, setTasks] = useState([]);
-  const [serverStatus, setServerStatus] = useState('Connecting...');
-  
+  const [search, setSearch] = useState('');
+  const [editingPatientId, setEditingPatientId] = useState(null);
+
+  // Phase 2 State: Filtering & Sorting for Tasks
+  const [statusFilter, setStatusFilter] = useState('All');
+  const [sortBy, setSortBy] = useState('newest');
+
+  // Form states
   const [patientForm, setPatientForm] = useState({ fullName: '', email: '', phone: '', gender: 'Female' });
-  const [taskForm, setTaskForm] = useState({ title: '', priority: 'Medium' });
-
-  useEffect(() => {
-    fetch('http://localhost:5000/api/health')
-      .then((res) => res.json())
-      .then((data) => setServerStatus(data.message))
-      .catch(() => setServerStatus('Disconnected'));
-
-    fetchPatients();
-    fetchTasks();
-  }, []);
+  const [taskForm, setTaskForm] = useState({ title: '', priority: 'Medium', assignedPatient: '' });
 
   const fetchPatients = async () => {
     try {
-      const res = await fetch('http://localhost:5000/api/patients');
+      const res = await fetch(`http://localhost:5000/api/patients?search=${encodeURIComponent(search)}`);
       const data = await res.json();
       if (data.success) setPatients(data.data);
     } catch (err) {
-      console.error('Failed to load patients', err);
+      console.error('Error fetching patients:', err);
     }
   };
 
@@ -34,34 +31,71 @@ function App() {
       const data = await res.json();
       if (data.success) setTasks(data.data);
     } catch (err) {
-      console.error('Failed to load tasks', err);
+      console.error('Error fetching tasks:', err);
     }
   };
 
-  const handlePatientSubmit = async (e) => {
-    e.preventDefault();
-    if (!patientForm.fullName || !patientForm.email) return;
+  useEffect(() => {
+    fetchPatients();
+    fetchTasks();
+  }, [search]);
 
+  // Submit / Edit Patient
+  const handleSavePatient = async (e) => {
+    e.preventDefault();
+    const isEdit = Boolean(editingPatientId);
+    const url = isEdit 
+      ? `http://localhost:5000/api/patients/${editingPatientId}` 
+      : 'http://localhost:5000/api/patients';
+    
     try {
-      const res = await fetch('http://localhost:5000/api/patients', {
-        method: 'POST',
+      const res = await fetch(url, {
+        method: isEdit ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(patientForm)
       });
       const data = await res.json();
       if (data.success) {
-        setPatients([...patients, data.data]);
         setPatientForm({ fullName: '', email: '', phone: '', gender: 'Female' });
+        setEditingPatientId(null);
+        fetchPatients();
+      } else {
+        alert(data.message);
       }
     } catch (err) {
-      console.error('Error adding patient', err);
+      console.error('Error saving patient:', err);
     }
   };
 
-  const handleTaskSubmit = async (e) => {
-    e.preventDefault();
-    if (!taskForm.title) return;
+  const handleStartEdit = (patient) => {
+    setEditingPatientId(patient._id);
+    setPatientForm({
+      fullName: patient.fullName,
+      email: patient.email,
+      phone: patient.phone,
+      gender: patient.gender || 'Female'
+    });
+  };
 
+  const handleCancelEdit = () => {
+    setEditingPatientId(null);
+    setPatientForm({ fullName: '', email: '', phone: '', gender: 'Female' });
+  };
+
+  const handleDeletePatient = async (id) => {
+    if (!window.confirm('Delete this patient record?')) return;
+    try {
+      const res = await fetch(`http://localhost:5000/api/patients/${id}`, { method: 'DELETE' });
+      const data = await res.json();
+      if (data.success) fetchPatients();
+    } catch (err) {
+      console.error('Error deleting patient:', err);
+    }
+  };
+
+  // Submit Task
+  const handleAddTask = async (e) => {
+    e.preventDefault();
     try {
       const res = await fetch('http://localhost:5000/api/tasks', {
         method: 'POST',
@@ -70,214 +104,259 @@ function App() {
       });
       const data = await res.json();
       if (data.success) {
-        setTasks([...tasks, data.data]);
-        setTaskForm({ title: '', priority: 'Medium' });
+        setTaskForm({ title: '', priority: 'Medium', assignedPatient: '' });
+        fetchTasks();
       }
     } catch (err) {
-      console.error('Error adding task', err);
+      console.error('Error adding task:', err);
     }
   };
 
+  const handleDeleteTask = async (id) => {
+    try {
+      const res = await fetch(`http://localhost:5000/api/tasks/${id}`, { method: 'DELETE' });
+      const data = await res.json();
+      if (data.success) fetchTasks();
+    } catch (err) {
+      console.error('Error deleting task:', err);
+    }
+  };
+
+  const handleCycleStatus = async (task) => {
+    const statusOrder = ['Pending', 'In Progress', 'Completed'];
+    const nextStatus = statusOrder[(statusOrder.indexOf(task.status) + 1) % statusOrder.length];
+
+    try {
+      const res = await fetch(`http://localhost:5000/api/tasks/${task._id}/status`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: nextStatus })
+      });
+      const data = await res.json();
+      if (data.success) fetchTasks();
+    } catch (err) {
+      console.error('Error updating status:', err);
+    }
+  };
+
+  // Filter & Sort Logic for Tasks
+  const filteredTasks = tasks
+    .filter((task) => statusFilter === 'All' || task.status === statusFilter)
+    .sort((a, b) => {
+      if (sortBy === 'newest') return new Date(b.createdAt || 0) - new Date(a.createdAt || 0);
+      if (sortBy === 'oldest') return new Date(a.createdAt || 0) - new Date(b.createdAt || 0);
+      if (sortBy === 'priority') {
+        const priorityOrder = { High: 3, Medium: 2, Low: 1 };
+        return (priorityOrder[b.priority] || 0) - (priorityOrder[a.priority] || 0);
+      }
+      return 0;
+    });
+
   // Analytics Computations
-  const highPriorityTasks = tasks.filter((t) => t.priority === 'High').length;
+  const totalPatients = patients.length;
+  const totalTasks = tasks.length;
   const pendingTasks = tasks.filter((t) => t.status === 'Pending').length;
+  const completedTasks = tasks.filter((t) => t.status === 'Completed').length;
+  const completionRate = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
 
   return (
-    <div className="min-h-screen bg-slate-900 text-slate-100 font-sans p-8">
-      {/* Top Header */}
-      <header className="max-w-6xl mx-auto flex items-center justify-between pb-6 border-b border-slate-800">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight text-emerald-400">
-            HealthCRM Portal
-          </h1>
-          <p className="text-sm text-slate-400">
-            Internal Patient Records, Tasks & Analytics Dashboard
-          </p>
-        </div>
-        <div className="bg-slate-800 px-4 py-2 rounded-lg border border-slate-700 text-xs font-mono text-emerald-400">
-          {serverStatus}
-        </div>
+    <div className="app-layout">
+      <header className="navbar">
+        <h1>Health CRM Operational Portal</h1>
       </header>
 
-      {/* Main Container */}
-      <main className="max-w-6xl mx-auto mt-8 space-y-8">
-
-        {/* Analytics Section */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <div className="bg-slate-800 p-5 rounded-xl border border-slate-700">
-            <span className="text-xs text-slate-400 uppercase font-mono">Total Patients</span>
-            <p className="text-3xl font-extrabold text-slate-100 mt-1">{patients.length}</p>
-          </div>
-          <div className="bg-slate-800 p-5 rounded-xl border border-slate-700">
-            <span className="text-xs text-slate-400 uppercase font-mono">Active Tasks</span>
-            <p className="text-3xl font-extrabold text-sky-400 mt-1">{tasks.length}</p>
-          </div>
-          <div className="bg-slate-800 p-5 rounded-xl border border-slate-700">
-            <span className="text-xs text-slate-400 uppercase font-mono">High Priority</span>
-            <p className="text-3xl font-extrabold text-rose-400 mt-1">{highPriorityTasks}</p>
-          </div>
-          <div className="bg-slate-800 p-5 rounded-xl border border-slate-700">
-            <span className="text-xs text-slate-400 uppercase font-mono">Pending Queue</span>
-            <p className="text-3xl font-extrabold text-amber-400 mt-1">{pendingTasks}</p>
-          </div>
+      {/* Analytics Summary Bar */}
+      <section className="analytics-bar">
+        <div className="stat-card">
+          <span className="stat-label">Total Patients</span>
+          <span className="stat-value">{totalPatients}</span>
         </div>
-        
-        {/* Patient Intake & Directory */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          <div className="bg-slate-800 p-6 rounded-xl border border-slate-700 h-fit">
-            <h2 className="text-lg font-semibold mb-4 text-slate-200">New Patient Intake</h2>
-            <form onSubmit={handlePatientSubmit} className="space-y-4">
-              <div>
-                <label className="block text-xs font-medium text-slate-400 mb-1">Full Name</label>
-                <input
-                  type="text"
-                  className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500"
-                  value={patientForm.fullName}
-                  onChange={(e) => setPatientForm({ ...patientForm, fullName: e.target.value })}
-                  placeholder="Patient Name"
-                  required
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-slate-400 mb-1">Email Address</label>
-                <input
-                  type="email"
-                  className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500"
-                  value={patientForm.email}
-                  onChange={(e) => setPatientForm({ ...patientForm, email: e.target.value })}
-                  placeholder="patient@example.com"
-                  required
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-slate-400 mb-1">Phone Number</label>
-                <input
-                  type="text"
-                  className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500"
-                  value={patientForm.phone}
-                  onChange={(e) => setPatientForm({ ...patientForm, phone: e.target.value })}
-                  placeholder="+254 700 000 000"
-                />
-              </div>
-              <button
-                type="submit"
-                className="w-full bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-medium py-2 rounded transition"
-              >
-                Add Patient Record
-              </button>
-            </form>
-          </div>
-
-          <div className="lg:col-span-2 bg-slate-800 p-6 rounded-xl border border-slate-700">
-            <div className="flex justify-between items-center mb-4">
-              <h2 className="text-lg font-semibold text-slate-200">Patient Directory</h2>
-              <span className="text-xs bg-slate-700 text-slate-300 px-2 py-1 rounded-full font-mono">
-                Count: {patients.length}
-              </span>
-            </div>
-
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm text-slate-300">
-                <thead className="bg-slate-900/50 text-slate-400 text-xs uppercase font-mono border-b border-slate-700">
-                  <tr>
-                    <th className="p-3">ID</th>
-                    <th className="p-3">Name</th>
-                    <th className="p-3">Email</th>
-                    <th className="p-3">Phone</th>
-                    <th className="p-3">Status</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-700">
-                  {patients.map((p) => (
-                    <tr key={p.id} className="hover:bg-slate-700/30">
-                      <td className="p-3 font-mono text-slate-500">#{p.id}</td>
-                      <td className="p-3 font-medium text-slate-100">{p.fullName}</td>
-                      <td className="p-3 text-slate-400">{p.email}</td>
-                      <td className="p-3 text-slate-400">{p.phone}</td>
-                      <td className="p-3">
-                        <span className="px-2 py-1 text-xs rounded bg-emerald-950 text-emerald-400 border border-emerald-800">
-                          {p.status}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
+        <div className="stat-card">
+          <span className="stat-label">Total Tasks</span>
+          <span className="stat-value">{totalTasks}</span>
         </div>
+        <div className="stat-card">
+          <span className="stat-label">Pending Tasks</span>
+          <span className="stat-value warning">{pendingTasks}</span>
+        </div>
+        <div className="stat-card">
+          <span className="stat-label">Completion Rate</span>
+          <span className="stat-value success">{completionRate}%</span>
+        </div>
+      </section>
 
-        {/* Task Queue Section */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          <div className="bg-slate-800 p-6 rounded-xl border border-slate-700 h-fit">
-            <h2 className="text-lg font-semibold mb-4 text-slate-200">Create Task</h2>
-            <form onSubmit={handleTaskSubmit} className="space-y-4">
-              <div>
-                <label className="block text-xs font-medium text-slate-400 mb-1">Task Description</label>
-                <input
-                  type="text"
-                  className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500"
-                  value={taskForm.title}
-                  onChange={(e) => setTaskForm({ ...taskForm, title: e.target.value })}
-                  placeholder="Review lab results..."
-                  required
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-slate-400 mb-1">Priority</label>
-                <select
-                  className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-sm text-slate-200 focus:outline-none focus:border-emerald-500"
-                  value={taskForm.priority}
-                  onChange={(e) => setTaskForm({ ...taskForm, priority: e.target.value })}
+      <main className="dashboard-grid">
+        {/* Patients Section */}
+        <section className="card">
+          <h2>Patient Directory</h2>
+          
+          <input
+            type="text"
+            placeholder="Search patients by name or email..."
+            className="search-input"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+
+          <form onSubmit={handleSavePatient} className="form-stack">
+            <input
+              type="text"
+              placeholder="Full Name"
+              required
+              value={patientForm.fullName}
+              onChange={(e) => setPatientForm({ ...patientForm, fullName: e.target.value })}
+            />
+            <input
+              type="email"
+              placeholder="Email"
+              required
+              value={patientForm.email}
+              onChange={(e) => setPatientForm({ ...patientForm, email: e.target.value })}
+            />
+            <input
+              type="tel"
+              placeholder="Phone Number"
+              required
+              value={patientForm.phone}
+              onChange={(e) => setPatientForm({ ...patientForm, phone: e.target.value })}
+            />
+            <div className="btn-group">
+              <button type="submit">{editingPatientId ? 'Update Patient' : 'Add Patient'}</button>
+              {editingPatientId && (
+                <button type="button" className="btn-secondary" onClick={handleCancelEdit}>
+                  Cancel
+                </button>
+              )}
+            </div>
+          </form>
+
+          {/* Enclosed Scrollable List Container */}
+          <div className="scroll-container">
+            <ul className="item-list">
+              {patients.map((p) => (
+                <li key={p._id} className="list-item">
+                  <div>
+                    <strong>{p.fullName}</strong>
+                    <p>{p.email} | {p.phone}</p>
+                  </div>
+                  <div className="action-row">
+                    <span className={`badge ${p.status ? p.status.toLowerCase() : 'active'}`}>
+                      {p.status || 'Active'}
+                    </span>
+                    <button className="btn-icon" onClick={() => handleStartEdit(p)}>✏️</button>
+                    <button className="btn-icon danger" onClick={() => handleDeletePatient(p._id)}>🗑️</button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </section>
+
+        {/* Tasks Section */}
+        <section className="card">
+          <h2>Workflow Tasks</h2>
+
+          <form onSubmit={handleAddTask} className="form-stack">
+            <input
+              type="text"
+              placeholder="Task Title"
+              required
+              value={taskForm.title}
+              onChange={(e) => setTaskForm({ ...taskForm, title: e.target.value })}
+            />
+            <select
+              value={taskForm.priority}
+              onChange={(e) => setTaskForm({ ...taskForm, priority: e.target.value })}
+            >
+              <option value="Low">Low Priority</option>
+              <option value="Medium">Medium Priority</option>
+              <option value="High">High Priority</option>
+            </select>
+            <select
+              value={taskForm.assignedPatient}
+              onChange={(e) => setTaskForm({ ...taskForm, assignedPatient: e.target.value })}
+            >
+              <option value="">-- Link to Patient (Optional) --</option>
+              {patients.map((p) => (
+                <option key={p._id} value={p._id}>
+                  {p.fullName}
+                </option>
+              ))}
+            </select>
+            <button type="submit">Create Task</button>
+          </form>
+
+          {/* Phase 2 Filter & Sort Controls */}
+          <div className="controls-bar">
+            <div className="filter-tabs">
+              {['All', 'Pending', 'In Progress', 'Completed'].map((tab) => (
+                <button
+                  key={tab}
+                  className={`tab-btn ${statusFilter === tab ? 'active' : ''}`}
+                  onClick={() => setStatusFilter(tab)}
                 >
-                  <option value="Low">Low</option>
-                  <option value="Medium">Medium</option>
-                  <option value="High">High</option>
-                </select>
-              </div>
-              <button
-                type="submit"
-                className="w-full bg-sky-600 hover:bg-sky-500 text-white text-sm font-medium py-2 rounded transition"
-              >
-                Assign Task
-              </button>
-            </form>
-          </div>
-
-          <div className="lg:col-span-2 bg-slate-800 p-6 rounded-xl border border-slate-700">
-            <div className="flex justify-between items-center mb-4">
-              <h2 className="text-lg font-semibold text-slate-200">Active Task Queue</h2>
-              <span className="text-xs bg-slate-700 text-slate-300 px-2 py-1 rounded-full font-mono">
-                Tasks: {tasks.length}
-              </span>
-            </div>
-
-            <div className="space-y-3">
-              {tasks.map((t) => (
-                <div key={t.id} className="flex items-center justify-between p-3 bg-slate-900/60 rounded-lg border border-slate-700">
-                  <div className="flex items-center space-x-3">
-                    <span className="text-xs font-mono text-slate-500">#{t.id}</span>
-                    <p className="text-sm text-slate-200 font-medium">{t.title}</p>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <span className={`text-xs px-2 py-0.5 rounded border ${
-                      t.priority === 'High' ? 'bg-rose-950 text-rose-400 border-rose-800' : 'bg-amber-950 text-amber-400 border-amber-800'
-                    }`}>
-                      {t.priority}
-                    </span>
-                    <span className="text-xs px-2 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700">
-                      {t.status}
-                    </span>
-                  </div>
-                </div>
+                  {tab}
+                </button>
               ))}
             </div>
+            <select
+              className="sort-select"
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value)}
+            >
+              <option value="newest">Sort: Newest</option>
+              <option value="oldest">Sort: Oldest</option>
+              <option value="priority">Sort: Priority</option>
+            </select>
+          </div>
+
+          {/* Enclosed Scrollable List Container */}
+          <div className="scroll-container">
+            <ul className="item-list">
+              {filteredTasks.length === 0 ? (
+                <li className="empty-message">No tasks found for this filter.</li>
+              ) : (
+                filteredTasks.map((t) => (
+                  <li key={t._id} className="list-item">
+                    <div>
+                      <strong>{t.title}</strong>
+                      <p>
+                        Priority: {t.priority}
+                        {t.assignedPatient && ` | Patient: ${t.assignedPatient.fullName}`}
+                      </p>
+                    </div>
+                    <div className="action-row">
+                      <button
+                        className={`status-btn ${t.status.toLowerCase().replace(' ', '-')}`}
+                        onClick={() => handleCycleStatus(t)}
+                      >
+                        {t.status}
+                      </button>
+                      <button className="btn-icon danger" onClick={() => handleDeleteTask(t._id)}>🗑️</button>
+                    </div>
+                  </li>
+                ))
+              )}
+            </ul>
+          </div>
+        </section>
+      </main>
+
+      {/* Company Info Footer */}
+      <footer className="footer">
+        <div className="footer-content">
+          <div>
+            <h3>Health CRM Solutions Inc.</h3>
+            <p>Empowering healthcare workflows and operational management.</p>
+          </div>
+          <div className="footer-details">
+            <p><strong>Support:</strong> derrickonyango20@gmail.com</p>
+            <p><strong>System Status:</strong> Operational (v1.2.0)</p>
+            <p><strong>Address:</strong> Kisumu, Kenya</p>
+            <p><strong>Since:</strong> 2015</p>
           </div>
         </div>
-
-      </main>
+      </footer>
     </div>
   );
 }
-
-export default App;

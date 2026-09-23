@@ -1,3 +1,15 @@
-node_modules
+# Dependencies
+node_modules/
+client/node_modules/
+server/node_modules/
+
+# Environment Variables
 .env
-dist
+.env.local
+
+# Production Build Output
+client/dist/
+
+# System Files
+.DS_Store
+Thumbs.db

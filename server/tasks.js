@@ -1,30 +1,47 @@
 const express = require('express');
 const router = express.Router();
-
-let tasks = [
-  { id: 1, title: 'Follow up on lab results for Jane Doe', priority: 'High', status: 'Pending' },
-  { id: 2, title: 'Verify medical insurance for John Smith', priority: 'Medium', status: 'Completed' }
-];
+const Task = require('./models/task');
 
 // GET /api/tasks
-router.get('/', (req, res) => {
-  res.json({ success: true, count: tasks.length, data: tasks });
+router.get('/', async (req, res) => {
+  try {
+    const tasks = await Task.find().populate('assignedPatient', 'fullName email').sort({ createdAt: -1 });
+    res.json({ success: true, count: tasks.length, data: tasks });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
 });
 
 // POST /api/tasks
-router.post('/', (req, res) => {
-  const { title, priority } = req.body;
-  if (!title) return res.status(400).json({ success: false, message: 'Task title is required.' });
+router.post('/', async (req, res) => {
+  try {
+    const task = await Task.create(req.body);
+    const populatedTask = await Task.findById(task._id).populate('assignedPatient', 'fullName email');
+    res.status(201).json({ success: true, data: populatedTask });
+  } catch (err) {
+    res.status(400).json({ success: false, message: err.message });
+  }
+});
 
-  const newTask = {
-    id: tasks.length + 1,
-    title,
-    priority: priority || 'Medium',
-    status: 'Pending'
-  };
+// PATCH /api/tasks/:id/status
+router.patch('/:id/status', async (req, res) => {
+  try {
+    const task = await Task.findByIdAndUpdate(req.params.id, { status: req.body.status }, { new: true }).populate('assignedPatient', 'fullName email');
+    res.json({ success: true, data: task });
+  } catch (err) {
+    res.status(400).json({ success: false, message: err.message });
+  }
+});
 
-  tasks.push(newTask);
-  res.status(201).json({ success: true, data: newTask });
+// DELETE /api/tasks/:id
+router.delete('/:id', async (req, res) => {
+  try {
+    const task = await Task.findByIdAndDelete(req.params.id);
+    if (!task) return res.status(404).json({ success: false, message: 'Task not found' });
+    res.json({ success: true, message: 'Task deleted successfully' });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
 });
 
 module.exports = router;

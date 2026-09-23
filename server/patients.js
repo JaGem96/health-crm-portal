@@ -1,53 +1,55 @@
 const express = require('express');
 const router = express.Router();
+const Patient = require('./models/patient');
 
-// Mock Database Storage (Structured identically to PostgreSQL tables)
-let patients = [
-  {
-    id: 1,
-    fullName: 'Jane Doe',
-    email: 'jane.doe@example.com',
-    phone: '+254 712 345 678',
-    gender: 'Female',
-    status: 'Active',
-    created_at: new Date().toISOString()
-  },
-  {
-    id: 2,
-    fullName: 'John Smith',
-    email: 'john.smith@example.com',
-    phone: '+254 722 987 654',
-    gender: 'Male',
-    status: 'Pending',
-    created_at: new Date().toISOString()
+// GET /api/patients - Search & fetch patients
+router.get('/', async (req, res) => {
+  try {
+    const { search } = req.query;
+    let query = {};
+    if (search) {
+      query.$or = [
+        { fullName: { $regex: search, $options: 'i' } },
+        { email: { $regex: search, $options: 'i' } }
+      ];
+    }
+    const patients = await Patient.find(query).sort({ createdAt: -1 });
+    res.json({ success: true, count: patients.length, data: patients });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
   }
-];
-
-// GET /api/patients - Fetch all patient records
-router.get('/', (req, res) => {
-  res.json({ success: true, count: patients.length, data: patients });
 });
 
-// POST /api/patients - Add a new patient record
-router.post('/', (req, res) => {
-  const { fullName, email, phone, gender, status } = req.body;
-
-  if (!fullName || !email) {
-    return res.status(400).json({ success: false, message: 'Name and email are required fields.' });
+// POST /api/patients - Create patient
+router.post('/', async (req, res) => {
+  try {
+    const patient = await Patient.create(req.body);
+    res.status(201).json({ success: true, data: patient });
+  } catch (err) {
+    res.status(400).json({ success: false, message: err.message });
   }
+});
 
-  const newPatient = {
-    id: patients.length + 1,
-    fullName,
-    email,
-    phone: phone || 'N/A',
-    gender: gender || 'Other',
-    status: status || 'Active',
-    created_at: new Date().toISOString()
-  };
+// PUT /api/patients/:id - Update patient details
+router.put('/:id', async (req, res) => {
+  try {
+    const patient = await Patient.findByIdAndUpdate(req.params.id, req.body, { new: true, runValidators: true });
+    if (!patient) return res.status(404).json({ success: false, message: 'Patient not found' });
+    res.json({ success: true, data: patient });
+  } catch (err) {
+    res.status(400).json({ success: false, message: err.message });
+  }
+});
 
-  patients.push(newPatient);
-  res.status(201).json({ success: true, data: newPatient });
+// DELETE /api/patients/:id - Remove patient
+router.delete('/:id', async (req, res) => {
+  try {
+    const patient = await Patient.findByIdAndDelete(req.params.id);
+    if (!patient) return res.status(404).json({ success: false, message: 'Patient not found' });
+    res.json({ success: true, message: 'Patient removed successfully' });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
 });
 
 module.exports = router;
