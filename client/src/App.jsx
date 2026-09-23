@@ -153,24 +153,30 @@ export default function App() {
     }
   };
 
-  // Submit Task
-  const handleAddTask = async (e) => {
-    e.preventDefault();
-    try {
-      const res = await fetch(`${API_BASE_URL}/api/tasks`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(taskForm)
-      });
-      const data = await res.json();
-      if (data.success) {
-        setTaskForm({ title: '', priority: 'Medium', assignedPatient: '' });
-        fetchTasks();
-      }
-    } catch (err) {
-      console.error('Error adding task:', err);
+  // Submit Task (Fixed empty string issue)
+const handleAddTask = async (e) => {
+  e.preventDefault();
+  try {
+    const payload = {
+      title: taskForm.title,
+      priority: taskForm.priority,
+      ...(taskForm.assignedPatient ? { assignedPatient: taskForm.assignedPatient } : {})
+    };
+
+    const res = await fetch(`${API_BASE_URL}/api/tasks`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json();
+    if (data.success) {
+      setTaskForm({ title: '', priority: 'Medium', assignedPatient: '' });
+      fetchTasks();
     }
-  };
+  } catch (err) {
+    console.error('Error adding task:', err);
+  }
+};
 
   const handleDeleteTask = async (id) => {
     try {

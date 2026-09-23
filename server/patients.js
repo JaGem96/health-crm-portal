@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const Patient = require('./models/patient');
 
-// GET all patients (or filtered by search)
+// GET all patients
 router.get('/', async (req, res) => {
   try {
     const { search } = req.query;
