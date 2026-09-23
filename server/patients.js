@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const Patient = require('./models/patient');
 
-// GET all patients
+// GET /api/patients
 router.get('/', async (req, res) => {
   try {
     const { search } = req.query;
@@ -11,8 +11,7 @@ router.get('/', async (req, res) => {
       query = {
         $or: [
           { fullName: { $regex: search, $options: 'i' } },
-          { phone: { $regex: search, $options: 'i' } },
-          { email: { $regex: search, $options: 'i' } }
+          { phone: { $regex: search, $options: 'i' } }
         ]
       };
     }
@@ -23,7 +22,7 @@ router.get('/', async (req, res) => {
   }
 });
 
-// POST create patient
+// POST /api/patients
 router.post('/', async (req, res) => {
   try {
     const newPatient = new Patient(req.body);
@@ -34,7 +33,7 @@ router.post('/', async (req, res) => {
   }
 });
 
-// PUT update patient
+// PUT /api/patients/:id
 router.put('/:id', async (req, res) => {
   try {
     const updated = await Patient.findByIdAndUpdate(req.params.id, req.body, { new: true });
@@ -44,7 +43,7 @@ router.put('/:id', async (req, res) => {
   }
 });
 
-// DELETE patient
+// DELETE /api/patients/:id
 router.delete('/:id', async (req, res) => {
   try {
     await Patient.findByIdAndDelete(req.params.id);
@@ -54,13 +53,14 @@ router.delete('/:id', async (req, res) => {
   }
 });
 
-// POST add vitals
+// POST /api/patients/:id/vitals
 router.post('/:id/vitals', async (req, res) => {
   try {
     const { temperature, systolicBP, diastolicBP, pulseRate, weight, loggedBy } = req.body;
     const patient = await Patient.findById(req.params.id);
     if (!patient) return res.status(404).json({ success: false, message: 'Patient not found' });
 
+    if (!patient.vitals) patient.vitals = [];
     patient.vitals.push({
       temperature: Number(temperature),
       systolicBP: Number(systolicBP),
