@@ -1,6 +1,9 @@
 import { useState, useEffect } from 'react';
 import './index.css';
 
+// Dynamic API URL: uses Vercel environment variable or falls back to live Render backend
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://health-crm-portal-heb8.onrender.com';
+
 export default function App() {
   const [patients, setPatients] = useState([]);
   const [tasks, setTasks] = useState([]);
@@ -17,7 +20,7 @@ export default function App() {
 
   const fetchPatients = async () => {
     try {
-      const res = await fetch(`http://localhost:5000/api/patients?search=${encodeURIComponent(search)}`);
+      const res = await fetch(`${API_BASE_URL}/api/patients?search=${encodeURIComponent(search)}`);
       const data = await res.json();
       if (data.success) setPatients(data.data);
     } catch (err) {
@@ -27,7 +30,7 @@ export default function App() {
 
   const fetchTasks = async () => {
     try {
-      const res = await fetch('http://localhost:5000/api/tasks');
+      const res = await fetch(`${API_BASE_URL}/api/tasks`);
       const data = await res.json();
       if (data.success) setTasks(data.data);
     } catch (err) {
@@ -45,8 +48,8 @@ export default function App() {
     e.preventDefault();
     const isEdit = Boolean(editingPatientId);
     const url = isEdit 
-      ? `http://localhost:5000/api/patients/${editingPatientId}` 
-      : 'http://localhost:5000/api/patients';
+      ? `${API_BASE_URL}/api/patients/${editingPatientId}` 
+      : `${API_BASE_URL}/api/patients`;
     
     try {
       const res = await fetch(url, {
@@ -85,7 +88,7 @@ export default function App() {
   const handleDeletePatient = async (id) => {
     if (!window.confirm('Delete this patient record?')) return;
     try {
-      const res = await fetch(`http://localhost:5000/api/patients/${id}`, { method: 'DELETE' });
+      const res = await fetch(`${API_BASE_URL}/api/patients/${id}`, { method: 'DELETE' });
       const data = await res.json();
       if (data.success) fetchPatients();
     } catch (err) {
@@ -97,7 +100,7 @@ export default function App() {
   const handleAddTask = async (e) => {
     e.preventDefault();
     try {
-      const res = await fetch('http://localhost:5000/api/tasks', {
+      const res = await fetch(`${API_BASE_URL}/api/tasks`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(taskForm)
@@ -114,7 +117,7 @@ export default function App() {
 
   const handleDeleteTask = async (id) => {
     try {
-      const res = await fetch(`http://localhost:5000/api/tasks/${id}`, { method: 'DELETE' });
+      const res = await fetch(`${API_BASE_URL}/api/tasks/${id}`, { method: 'DELETE' });
       const data = await res.json();
       if (data.success) fetchTasks();
     } catch (err) {
@@ -127,7 +130,7 @@ export default function App() {
     const nextStatus = statusOrder[(statusOrder.indexOf(task.status) + 1) % statusOrder.length];
 
     try {
-      const res = await fetch(`http://localhost:5000/api/tasks/${task._id}/status`, {
+      const res = await fetch(`${API_BASE_URL}/api/tasks/${task._id}/status`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: nextStatus })
