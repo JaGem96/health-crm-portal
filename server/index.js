@@ -15,6 +15,7 @@ mongoose.connect(process.env.MONGO_URI)
   .catch((err) => console.error('MongoDB connection error:', err));
 
 // Routes
+a// Check lines 17-19 in server/index.js
 app.use('/api/patients', require('./patients'));
 app.use('/api/tasks', require('./tasks'));
 
