@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
 import './index.css';
 
-// Dynamic API URL: uses Vercel environment variable or falls back to live Render backend
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://health-crm-portal-heb8.onrender.com';
 
 export default function App() {
@@ -10,12 +9,36 @@ export default function App() {
   const [search, setSearch] = useState('');
   const [editingPatientId, setEditingPatientId] = useState(null);
 
-  // Phase 2 State: Filtering & Sorting for Tasks
+  // Active Role Simulation (RBAC)
+  const [userRole, setUserRole] = useState('Nurse'); // 'Receptionist' | 'Nurse' | 'Doctor'
+
+  // Vitals Modal State
+  const [selectedPatientForVitals, setSelectedPatientForVitals] = useState(null);
+  const [vitalsForm, setVitalsForm] = useState({
+    temperature: '',
+    systolicBP: '',
+    diastolicBP: '',
+    pulseRate: '',
+    weight: '',
+    loggedBy: 'Nurse'
+  });
+
+  // Task Filter & Sort State
   const [statusFilter, setStatusFilter] = useState('All');
   const [sortBy, setSortBy] = useState('newest');
 
   // Form states
-  const [patientForm, setPatientForm] = useState({ fullName: '', email: '', phone: '', gender: 'Female' });
+  const [patientForm, setPatientForm] = useState({
+    fullName: '',
+    email: '',
+    phone: '',
+    gender: 'Female',
+    insuranceProvider: 'SHA/NHIF',
+    shaNumber: '',
+    claimStatus: 'Pending',
+    preAuthCode: ''
+  });
+
   const [taskForm, setTaskForm] = useState({ title: '', priority: 'Medium', assignedPatient: '' });
 
   const fetchPatients = async () => {
@@ -43,7 +66,7 @@ export default function App() {
     fetchTasks();
   }, [search]);
 
-  // Submit / Edit Patient
+  // Save Patient (With SHA / NHIF fields)
   const handleSavePatient = async (e) => {
     e.preventDefault();
     const isEdit = Boolean(editingPatientId);
@@ -59,8 +82,7 @@ export default function App() {
       });
       const data = await res.json();
       if (data.success) {
-        setPatientForm({ fullName: '', email: '', phone: '', gender: 'Female' });
-        setEditingPatientId(null);
+        resetPatientForm();
         fetchPatients();
       } else {
         alert(data.message);
@@ -70,19 +92,32 @@ export default function App() {
     }
   };
 
+  const resetPatientForm = () => {
+    setPatientForm({
+      fullName: '',
+      email: '',
+      phone: '',
+      gender: 'Female',
+      insuranceProvider: 'SHA/NHIF',
+      shaNumber: '',
+      claimStatus: 'Pending',
+      preAuthCode: ''
+    });
+    setEditingPatientId(null);
+  };
+
   const handleStartEdit = (patient) => {
     setEditingPatientId(patient._id);
     setPatientForm({
       fullName: patient.fullName,
-      email: patient.email,
+      email: patient.email || '',
       phone: patient.phone,
-      gender: patient.gender || 'Female'
+      gender: patient.gender || 'Female',
+      insuranceProvider: patient.insuranceProvider || 'Cash',
+      shaNumber: patient.shaNumber || '',
+      claimStatus: patient.claimStatus || 'None',
+      preAuthCode: patient.preAuthCode || ''
     });
-  };
-
-  const handleCancelEdit = () => {
-    setEditingPatientId(null);
-    setPatientForm({ fullName: '', email: '', phone: '', gender: 'Female' });
   };
 
   const handleDeletePatient = async (id) => {
@@ -93,6 +128,28 @@ export default function App() {
       if (data.success) fetchPatients();
     } catch (err) {
       console.error('Error deleting patient:', err);
+    }
+  };
+
+  // Submit Vitals for a Patient
+  const handleAddVitals = async (e) => {
+    e.preventDefault();
+    if (!selectedPatientForVitals) return;
+
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/patients/${selectedPatientForVitals._id}/vitals`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...vitalsForm, loggedBy: userRole })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setSelectedPatientForVitals(null);
+        setVitalsForm({ temperature: '', systolicBP: '', diastolicBP: '', pulseRate: '', weight: '', loggedBy: userRole });
+        fetchPatients();
+      }
+    } catch (err) {
+      console.error('Error adding vitals:', err);
     }
   };
 
@@ -157,15 +214,28 @@ export default function App() {
 
   // Analytics Computations
   const totalPatients = patients.length;
-  const totalTasks = tasks.length;
+  const shaClaimsPending = patients.filter((p) => p.claimStatus === 'Pending').length;
   const pendingTasks = tasks.filter((t) => t.status === 'Pending').length;
   const completedTasks = tasks.filter((t) => t.status === 'Completed').length;
-  const completionRate = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
+  const completionRate = tasks.length > 0 ? Math.round((completedTasks / tasks.length) * 100) : 0;
 
   return (
     <div className="app-layout">
       <header className="navbar">
-        <h1>Health CRM Operational Portal</h1>
+        <div>
+          <h1>AfyaCRM Hospital Portal</h1>
+          <p className="subtitle">Clinical Operations & Triage System</p>
+        </div>
+        
+        {/* Role Switcher */}
+        <div className="role-switcher">
+          <label>Active Role: </label>
+          <select value={userRole} onChange={(e) => setUserRole(e.target.value)}>
+            <option value="Receptionist">Receptionist</option>
+            <option value="Nurse">Triage Nurse</option>
+            <option value="Doctor">Consulting Physician</option>
+          </select>
+        </div>
       </header>
 
       {/* Analytics Summary Bar */}
@@ -175,15 +245,15 @@ export default function App() {
           <span className="stat-value">{totalPatients}</span>
         </div>
         <div className="stat-card">
-          <span className="stat-label">Total Tasks</span>
-          <span className="stat-value">{totalTasks}</span>
+          <span className="stat-label">Pending SHA Claims</span>
+          <span className="stat-value warning">{shaClaimsPending}</span>
         </div>
         <div className="stat-card">
-          <span className="stat-label">Pending Tasks</span>
+          <span className="stat-label">Pending Triage Tasks</span>
           <span className="stat-value warning">{pendingTasks}</span>
         </div>
         <div className="stat-card">
-          <span className="stat-label">Completion Rate</span>
+          <span className="stat-label">Task Completion</span>
           <span className="stat-value success">{completionRate}%</span>
         </div>
       </section>
@@ -191,16 +261,17 @@ export default function App() {
       <main className="dashboard-grid">
         {/* Patients Section */}
         <section className="card">
-          <h2>Patient Directory</h2>
+          <h2>Patient Directory & SHA/NHIF Tracking</h2>
           
           <input
             type="text"
-            placeholder="Search patients by name or email..."
+            placeholder="Search patients by name or phone..."
             className="search-input"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
 
+          {/* Registration Form */}
           <form onSubmit={handleSavePatient} className="form-stack">
             <input
               type="text"
@@ -209,60 +280,121 @@ export default function App() {
               value={patientForm.fullName}
               onChange={(e) => setPatientForm({ ...patientForm, fullName: e.target.value })}
             />
-            <input
-              type="email"
-              placeholder="Email"
-              required
-              value={patientForm.email}
-              onChange={(e) => setPatientForm({ ...patientForm, email: e.target.value })}
-            />
-            <input
-              type="tel"
-              placeholder="Phone Number"
-              required
-              value={patientForm.phone}
-              onChange={(e) => setPatientForm({ ...patientForm, phone: e.target.value })}
-            />
+            <div className="form-row">
+              <input
+                type="tel"
+                placeholder="Phone Number (+254)"
+                required
+                value={patientForm.phone}
+                onChange={(e) => setPatientForm({ ...patientForm, phone: e.target.value })}
+              />
+              <select
+                value={patientForm.gender}
+                onChange={(e) => setPatientForm({ ...patientForm, gender: e.target.value })}
+              >
+                <option value="Female">Female</option>
+                <option value="Male">Male</option>
+                <option value="Other">Other</option>
+              </select>
+            </div>
+
+            {/* SHA / NHIF Section */}
+            <div className="form-row">
+              <select
+                value={patientForm.insuranceProvider}
+                onChange={(e) => setPatientForm({ ...patientForm, insuranceProvider: e.target.value })}
+              >
+                <option value="SHA/NHIF">SHA / NHIF Provider</option>
+                <option value="Private">Private Insurance</option>
+                <option value="Cash">Cash / Self-Pay</option>
+              </select>
+              {patientForm.insuranceProvider === 'SHA/NHIF' && (
+                <input
+                  type="text"
+                  placeholder="SHA/NHIF Card No."
+                  value={patientForm.shaNumber}
+                  onChange={(e) => setPatientForm({ ...patientForm, shaNumber: e.target.value })}
+                />
+              )}
+            </div>
+
+            {patientForm.insuranceProvider === 'SHA/NHIF' && (
+              <div className="form-row">
+                <select
+                  value={patientForm.claimStatus}
+                  onChange={(e) => setPatientForm({ ...patientForm, claimStatus: e.target.value })}
+                >
+                  <option value="None">Claim: None</option>
+                  <option value="Pending">Claim: Pending Approval</option>
+                  <option value="Approved">Claim: Approved</option>
+                  <option value="Rejected">Claim: Rejected</option>
+                </select>
+                <input
+                  type="text"
+                  placeholder="Pre-Auth Code (If approved)"
+                  value={patientForm.preAuthCode}
+                  onChange={(e) => setPatientForm({ ...patientForm, preAuthCode: e.target.value })}
+                />
+              </div>
+            )}
+
             <div className="btn-group">
-              <button type="submit">{editingPatientId ? 'Update Patient' : 'Add Patient'}</button>
+              <button type="submit">{editingPatientId ? 'Update Record' : 'Register Patient'}</button>
               {editingPatientId && (
-                <button type="button" className="btn-secondary" onClick={handleCancelEdit}>
+                <button type="button" className="btn-secondary" onClick={resetPatientForm}>
                   Cancel
                 </button>
               )}
             </div>
           </form>
 
-          {/* Enclosed Scrollable List Container */}
+          {/* Scrollable Patient List */}
           <div className="scroll-container">
             <ul className="item-list">
               {patients.map((p) => (
-                <li key={p._id} className="list-item">
-                  <div>
-                    <strong>{p.fullName}</strong>
-                    <p>{p.email} | {p.phone}</p>
+                <li key={p._id} className="list-item flex-column">
+                  <div className="patient-header-row">
+                    <div>
+                      <strong>{p.fullName}</strong> ({p.gender})
+                      <p>{p.phone} | Provider: {p.insuranceProvider || 'Cash'}</p>
+                      {p.shaNumber && <p className="meta-text">SHA No: {p.shaNumber} | Pre-Auth: {p.preAuthCode || 'N/A'}</p>}
+                    </div>
+                    <div className="action-row">
+                      <span className={`badge claim-${(p.claimStatus || 'none').toLowerCase()}`}>
+                        {p.claimStatus || 'Cash'}
+                      </span>
+                      <button className="btn-icon" onClick={() => setSelectedPatientForVitals(p)} title="Log Vitals">
+                        🩺
+                      </button>
+                      <button className="btn-icon" onClick={() => handleStartEdit(p)}>✏️</button>
+                      <button className="btn-icon danger" onClick={() => handleDeletePatient(p._id)}>🗑️</button>
+                    </div>
                   </div>
-                  <div className="action-row">
-                    <span className={`badge ${p.status ? p.status.toLowerCase() : 'active'}`}>
-                      {p.status || 'Active'}
-                    </span>
-                    <button className="btn-icon" onClick={() => handleStartEdit(p)}>✏️</button>
-                    <button className="btn-icon danger" onClick={() => handleDeletePatient(p._id)}>🗑️</button>
-                  </div>
+
+                  {/* Vitals Summary Card */}
+                  {p.vitals && p.vitals.length > 0 && (
+                    <div className="vitals-preview">
+                      <small><strong>Latest Vitals ({new Date(p.vitals[p.vitals.length - 1].loggedAt).toLocaleDateString()}):</strong></small>
+                      <span> Temp: {p.vitals[p.vitals.length - 1].temperature || '--'}°C</span> |
+                      <span> BP: {p.vitals[p.vitals.length - 1].systolicBP || '--'}/{p.vitals[p.vitals.length - 1].diastolicBP || '--'} mmHg</span> |
+                      <span> Pulse: {p.vitals[p.vitals.length - 1].pulseRate || '--'} bpm</span> |
+                      <span> Weight: {p.vitals[p.vitals.length - 1].weight || '--'} kg</span>
+                    </div>
+                  )}
                 </li>
               ))}
             </ul>
           </div>
         </section>
 
-        {/* Tasks Section */}
+        {/* Workflow Tasks Section */}
         <section className="card">
-          <h2>Workflow Tasks</h2>
+          <h2>Clinical Tasks & Queue</h2>
 
           <form onSubmit={handleAddTask} className="form-stack">
             <input
               type="text"
-              placeholder="Task Title"
+              placeholder="Task / Consultation Request"
               required
               value={taskForm.title}
               onChange={(e) => setTaskForm({ ...taskForm, title: e.target.value })}
@@ -271,25 +403,25 @@ export default function App() {
               value={taskForm.priority}
               onChange={(e) => setTaskForm({ ...taskForm, priority: e.target.value })}
             >
-              <option value="Low">Low Priority</option>
-              <option value="Medium">Medium Priority</option>
-              <option value="High">High Priority</option>
+              <option value="Low">Low Priority (Routine)</option>
+              <option value="Medium">Medium Priority (Standard)</option>
+              <option value="High">High Priority (Urgent Triage)</option>
             </select>
             <select
               value={taskForm.assignedPatient}
               onChange={(e) => setTaskForm({ ...taskForm, assignedPatient: e.target.value })}
             >
-              <option value="">-- Link to Patient (Optional) --</option>
+              <option value="">-- Link to Patient --</option>
               {patients.map((p) => (
                 <option key={p._id} value={p._id}>
                   {p.fullName}
                 </option>
               ))}
             </select>
-            <button type="submit">Create Task</button>
+            <button type="submit">Assign Task</button>
           </form>
 
-          {/* Phase 2 Filter & Sort Controls */}
+          {/* Filter & Sort Controls */}
           <div className="controls-bar">
             <div className="filter-tabs">
               {['All', 'Pending', 'In Progress', 'Completed'].map((tab) => (
@@ -313,11 +445,10 @@ export default function App() {
             </select>
           </div>
 
-          {/* Enclosed Scrollable List Container */}
           <div className="scroll-container">
             <ul className="item-list">
               {filteredTasks.length === 0 ? (
-                <li className="empty-message">No tasks found for this filter.</li>
+                <li className="empty-message">No tasks in this view.</li>
               ) : (
                 filteredTasks.map((t) => (
                   <li key={t._id} className="list-item">
@@ -345,18 +476,83 @@ export default function App() {
         </section>
       </main>
 
-      {/* Company Info Footer */}
+      {/* Vitals Triage Modal */}
+      {selectedPatientForVitals && (
+        <div className="modal-backdrop">
+          <div className="modal-card">
+            <h3>Record Vitals: {selectedPatientForVitals.fullName}</h3>
+            <p className="subtitle">Logged by Role: <strong>{userRole}</strong></p>
+
+            <form onSubmit={handleAddVitals} className="form-stack">
+              <div className="form-row">
+                <input
+                  type="number"
+                  step="0.1"
+                  placeholder="Temperature (°C)"
+                  required
+                  value={vitalsForm.temperature}
+                  onChange={(e) => setVitalsForm({ ...vitalsForm, temperature: e.target.value })}
+                />
+                <input
+                  type="number"
+                  placeholder="Pulse Rate (bpm)"
+                  required
+                  value={vitalsForm.pulseRate}
+                  onChange={(e) => setVitalsForm({ ...vitalsForm, pulseRate: e.target.value })}
+                />
+              </div>
+
+              <div className="form-row">
+                <input
+                  type="number"
+                  placeholder="Systolic BP (mmHg)"
+                  required
+                  value={vitalsForm.systolicBP}
+                  onChange={(e) => setVitalsForm({ ...vitalsForm, systolicBP: e.target.value })}
+                />
+                <input
+                  type="number"
+                  placeholder="Diastolic BP (mmHg)"
+                  required
+                  value={vitalsForm.diastolicBP}
+                  onChange={(e) => setVitalsForm({ ...vitalsForm, diastolicBP: e.target.value })}
+                />
+              </div>
+
+              <input
+                type="number"
+                step="0.1"
+                placeholder="Weight (kg)"
+                required
+                value={vitalsForm.weight}
+                onChange={(e) => setVitalsForm({ ...vitalsForm, weight: e.target.value })}
+              />
+
+              <div className="btn-group">
+                <button type="submit">Save Vitals</button>
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  onClick={() => setSelectedPatientForVitals(null)}
+                >
+                  Close
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Footer */}
       <footer className="footer">
         <div className="footer-content">
           <div>
-            <h3>Health CRM Solutions Inc.</h3>
-            <p>Empowering healthcare workflows and operational management.</p>
+            <h3>AfyaCRM Solutions Kenya</h3>
+            <p>Empowering Kenyan Healthcare Facilities with Digital Workflows.</p>
           </div>
           <div className="footer-details">
             <p><strong>Support:</strong> derrickonyango20@gmail.com</p>
-            <p><strong>System Status:</strong> Operational (v1.2.0)</p>
-            <p><strong>Address:</strong> Kisumu, Kenya</p>
-            <p><strong>Since:</strong> 2015</p>
+            <p><strong>System Status:</strong> Operational (v2.0.0 SHA-Enabled)</p>
           </div>
         </div>
       </footer>
