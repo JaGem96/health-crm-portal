@@ -2,78 +2,39 @@ const express = require('express');
 const router = express.Router();
 const Patient = require('./models/patient');
 
-// GET /api/patients
+// GET all patients
 router.get('/', async (req, res) => {
   try {
-    const { search } = req.query;
-    let query = {};
-    if (search) {
-      query = {
-        $or: [
-          { fullName: { $regex: search, $options: 'i' } },
-          { phone: { $regex: search, $options: 'i' } }
-        ]
-      };
-    }
-    const patients = await Patient.find(query).sort({ createdAt: -1 });
+    const patients = await Patient.find().sort({ createdAt: -1 });
     res.json({ success: true, data: patients });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({ success: false, error: err.message });
   }
 });
 
-// POST /api/patients
+// POST new patient
 router.post('/', async (req, res) => {
   try {
-    const newPatient = new Patient(req.body);
-    await newPatient.save();
-    res.json({ success: true, data: newPatient });
+    const patient = await Patient.create(req.body);
+    res.json({ success: true, data: patient });
   } catch (err) {
-    res.status(400).json({ success: false, message: err.message });
+    res.status(400).json({ success: false, error: err.message });
   }
 });
 
-// PUT /api/patients/:id
-router.put('/:id', async (req, res) => {
-  try {
-    const updated = await Patient.findByIdAndUpdate(req.params.id, req.body, { new: true });
-    res.json({ success: true, data: updated });
-  } catch (err) {
-    res.status(400).json({ success: false, message: err.message });
-  }
-});
-
-// DELETE /api/patients/:id
-router.delete('/:id', async (req, res) => {
-  try {
-    await Patient.findByIdAndDelete(req.params.id);
-    res.json({ success: true, message: 'Patient deleted' });
-  } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
-  }
-});
-
-// POST /api/patients/:id/vitals
+// POST add vitals to specific patient (:id/vitals)
 router.post('/:id/vitals', async (req, res) => {
   try {
-    const { temperature, systolicBP, diastolicBP, pulseRate, weight, loggedBy } = req.body;
+    const { temperature, systolicBP, diastolicBP, pulseRate, weight } = req.body;
     const patient = await Patient.findById(req.params.id);
     if (!patient) return res.status(404).json({ success: false, message: 'Patient not found' });
 
-    if (!patient.vitals) patient.vitals = [];
-    patient.vitals.push({
-      temperature: Number(temperature),
-      systolicBP: Number(systolicBP),
-      diastolicBP: Number(diastolicBP),
-      pulseRate: Number(pulseRate),
-      weight: Number(weight),
-      loggedBy: loggedBy || 'Nurse'
-    });
-
+    patient.vitals.push({ temperature, systolicBP, diastolicBP, pulseRate, weight });
     await patient.save();
+
     res.json({ success: true, data: patient });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.status(400).json({ success: false, error: err.message });
   }
 });
 
